@@ -22,7 +22,7 @@
             {% for file in files|reverse %}
                 <li>
                     <a
-                        href="{{file.url(packages_url)}}"
+                        href="{{file.get_url(packages_url)}}"
                         {%- if file.requires_python %}
                             data-requires-python="{{file.requires_python}}"
                         {%- endif %}

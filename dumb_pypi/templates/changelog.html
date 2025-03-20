@@ -65,7 +65,7 @@
 
         {% for file in files_newest_first %}
             <tr>
-                <td><a href="{{file.url(packages_url)}}">{{file.filename}}</a></td>
+                <td><a href="{{file.get_url(packages_url)}}">{{file.filename}}</a></td>
                 <td class="nowrap">
                     {% if file.upload_timestamp %}
                         {{file.formatted_upload_time}}

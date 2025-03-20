@@ -3,6 +3,10 @@
 To generate the registry, pass a list of packages using either --package-list
 or --package-list-json.
 
+Packages can be specified as:
+1. Just filenames (combined with --packages-url to form full URLs)
+2. Complete URLs to the packages (e.g., GitHub release URLs)
+
 By default, the entire registry is rebuilt. If you want to do a rebuild of
 changed packages only, you can pass --previous-package-list(-json) with the old
 package list.
@@ -20,6 +24,7 @@ import os.path
 import re
 import sys
 import tempfile
+import urllib.parse
 from collections.abc import Generator
 from collections.abc import Iterator
 from collections.abc import Sequence
@@ -45,6 +50,11 @@ WHEEL_FILENAME_RE = re.compile(r'''
 \.whl$
 ''', re.IGNORECASE | re.VERBOSE)
 
+# Pattern to match GitHub archive URLs
+GITHUB_ARCHIVE_RE = re.compile(
+    r'https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/archive/refs/tags/(?P<version>.+?)\.(tar\.gz|zip)'
+)
+
 
 def remove_extension(name: str) -> str:
     if name.endswith(('gz', 'bz2')):
@@ -53,9 +63,42 @@ def remove_extension(name: str) -> str:
     return name
 
 
+def get_filename_from_url(url: str) -> str:
+    """Extract filename from a URL."""
+    parsed_url = urllib.parse.urlparse(url)
+    return os.path.basename(parsed_url.path)
+
+
+def is_github_archive_url(url: str) -> bool:
+    """Check if URL is a GitHub archive URL."""
+    return bool(GITHUB_ARCHIVE_RE.match(url))
+
+
+def extract_package_info_from_github_url(url: str) -> tuple[str, str | None]:
+    """Extract the package name and version from a GitHub archive URL."""
+    match = GITHUB_ARCHIVE_RE.match(url)
+    if not match:
+        raise ValueError(f"Not a GitHub archive URL: {url}")
+    
+    # For GitHub archives, we'll use the repository name as the package name
+    repo_name = match.group('repo')
+    version = match.group('version')
+    
+    # If version starts with 'v', strip it
+    if version.startswith('v') and len(version) > 1 and version[1].isdigit():
+        version = version[1:]
+        
+    return repo_name, version
+
+
 def guess_name_version_from_filename(
         filename: str,
+        url: str | None = None,
 ) -> tuple[str, str | None]:
+    # Special case for GitHub archive URLs
+    if url and is_github_archive_url(url):
+        return extract_package_info_from_github_url(url)
+        
     if filename.endswith('.whl'):
         # TODO: Switch to packaging.utils.parse_wheel_filename which enforces
         # PEP440 versions for wheels.
@@ -100,6 +143,7 @@ def _natural_key(s: str) -> tuple[int | str, ...]:
 
 class Package(NamedTuple):
     filename: str
+    url: str | None  # New field for direct URL
     name: str
     version: str | None
     parsed_version: packaging.version.Version
@@ -150,9 +194,11 @@ class Package(NamedTuple):
             info += f', {self.uploaded_by}'
         return info
 
-    def url(self, base_url: str, *, include_hash: bool = True) -> str:
+    def get_url(self, base_url: str, *, include_hash: bool = True) -> str:
+        # Use direct URL if provided, otherwise build from base_url and filename
+        url = self.url if self.url else f'{base_url.rstrip("/")}/{self.filename}'
         hash_part = f'#{self.hash}' if self.hash and include_hash else ''
-        return f'{base_url.rstrip("/")}/{self.filename}{hash_part}'
+        return f'{url}{hash_part}'
 
     @property
     def packagetype(self) -> str:
@@ -166,7 +212,7 @@ class Package(NamedTuple):
     def json_info(self, base_url: str) -> dict[str, Any]:
         ret: dict[str, Any] = {
             'filename': self.filename,
-            'url': self.url(base_url, include_hash=False),
+            'url': self.get_url(base_url, include_hash=False),
             'requires_python': self.requires_python,
             'packagetype': self.packagetype,
             'yanked': bool(self.yanked_reason),
@@ -191,7 +237,10 @@ class Package(NamedTuple):
     def create(
             cls,
             *,
-            filename: str,
+            filename: str = '',
+            url: str | None = None,
+            name: str | None = None,  # Allow explicit name override
+            version: str | None = None,  # Allow explicit version override
             hash: str | None = None,
             requires_dist: Sequence[str] | None = None,
             requires_python: str | None = None,
@@ -200,12 +249,24 @@ class Package(NamedTuple):
             yanked_reason: str | None = None,
             core_metadata: str | None = None,
     ) -> Package:
+        # If URL is provided but filename is not, extract the filename from the URL
+        if url and not filename:
+            filename = get_filename_from_url(url)
+            
         if not re.match(r'[a-zA-Z0-9_\-\.\+]+$', filename) or '..' in filename:
             raise ValueError(f'Unsafe package name: {filename}')
 
-        name, version = guess_name_version_from_filename(filename)
+        # Allow override of name and version, or auto-detect from filename/URL
+        if name is None or version is None:
+            auto_name, auto_version = guess_name_version_from_filename(filename, url)
+            if name is None:
+                name = auto_name
+            if version is None:
+                version = auto_version
+
         return cls(
             filename=filename,
+            url=url,
             name=packaging.utils.canonicalize_name(name),
             version=version,
             parsed_version=packaging.version.parse(version or '0'),
@@ -442,7 +503,30 @@ def _create_packages(
 
 
 def package_list(path: str) -> dict[str, set[Package]]:
-    return _create_packages({'filename': line} for line in _lines_from_path(path))
+    """Parse a list of filenames or URLs."""
+    package_infos = []
+    
+    for line in _lines_from_path(path):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+            
+        # Check if it's a URL
+        if line.startswith(('http://', 'https://')):
+            # Special handling for GitHub archive URLs
+            if is_github_archive_url(line):
+                name, version = extract_package_info_from_github_url(line)
+                package_infos.append({
+                    'url': line,
+                    'name': name,
+                    'version': version
+                })
+            else:
+                package_infos.append({'url': line})
+        else:
+            package_infos.append({'filename': line})
+            
+    return _create_packages(iter(package_infos))
 
 
 def package_list_json(path: str) -> dict[str, set[Package]]:
@@ -458,7 +542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     package_input_group = parser.add_mutually_exclusive_group(required=True)
     package_input_group.add_argument(
         '--package-list',
-        help='path to a list of packages (one per line)',
+        help='path to a list of packages (one filename or URL per line)',
         type=package_list,
         dest='packages',
     )
@@ -488,7 +572,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         '--packages-url',
-        help='url to packages (can be absolute or relative)', required=True,
+        help='url to packages (used as base URL for packages without full URLs)',
     )
     parser.add_argument(
         '--title',
@@ -521,9 +605,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Make --packages-url optional but warn if missing and needed
+    if not args.packages_url:
+        # Check if any packages lack a direct URL
+        any_non_url_packages = any(
+            pkg for pkgs in args.packages.values() 
+            for pkg in pkgs if not pkg.url
+        )
+        if any_non_url_packages:
+            print("Warning: Some packages don't have direct URLs. Using empty base URL.", file=sys.stderr)
+
     settings = Settings(
         output_dir=args.output_dir,
-        packages_url=args.packages_url,
+        packages_url=args.packages_url or '',
         title=args.title,
         logo=args.logo,
         logo_width=args.logo_width,
