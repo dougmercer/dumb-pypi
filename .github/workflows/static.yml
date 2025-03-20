@@ -36,7 +36,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-            path: pages/
+            path: "./pages/"
             retention-days: 2
       - name: Deploy to GitHub Pages
         id: deployment
