@@ -256,8 +256,10 @@ class Package(NamedTuple):
     @property
     def display_filename(self) -> str:
         """Return a filename suitable for display."""
-        if not self.filename and is_git_repo_url(self.url or ""):
-            return create_dummy_filename_for_git(self.name, self.version)
+        if not self.filename:
+            if is_git_repo_url(self.url or ''):
+                # Create a proper filename for pip to parse
+                return f"{self.name}-{self.version or '0.0.0'}.tar.gz"
         return self.filename
 
     @property

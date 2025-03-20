@@ -32,7 +32,7 @@
                         {%- if file.yanked_reason %}
                             data-yanked="{{file.yanked_reason}}"
                         {%- endif %}
-                    >{{file.display_filename}}</a>
+                    >{{file.name}}-{{file.version}}.tar.gz</a>
                     ({{file.info_string}})
                 </li>
             {% endfor %}
