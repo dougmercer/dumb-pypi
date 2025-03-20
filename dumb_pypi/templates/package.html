@@ -32,7 +32,7 @@
                         {%- if file.yanked_reason %}
                             data-yanked="{{file.yanked_reason}}"
                         {%- endif %}
-                    >{{file.filename}}</a>
+                    >{{file.display_filename}}</a>
                     ({{file.info_string}})
                 </li>
             {% endfor %}
@@ -42,7 +42,3 @@
             document.getElementById('requirement').onfocus = (e) => e.target.select();
         </script>
     </body>
-</html>
-
-{# vim: ft=jinja
-#}
