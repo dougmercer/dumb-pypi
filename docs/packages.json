@@ -1,0 +1,30 @@
+{
+  "keyed-extras": [
+    {
+      "name": "keyed-extras",
+      "version": "0.2.0",
+      "url": "git+https://github.com/dougmercer-yt/keyed-extras@0.2.0#egg=keyed-extras-0.2.0",
+      "upload_time": "2025-03-21 00:54:33"
+    },
+    {
+      "name": "keyed-extras",
+      "version": "0.1.0",
+      "url": "git+https://github.com/dougmercer-yt/keyed-extras@0.1.0#egg=keyed-extras-0.1.0",
+      "upload_time": "2025-03-21 00:54:33"
+    }
+  ],
+  "another-package": [
+    {
+      "name": "another-package",
+      "version": "1.1.0",
+      "url": "git+https://github.com/username/another-package@1.1.0#egg=another-package-1.1.0",
+      "upload_time": "2025-03-21 00:54:33"
+    },
+    {
+      "name": "another-package",
+      "version": "1.0.0",
+      "url": "git+https://github.com/username/another-package@1.0.0#egg=another-package-1.0.0",
+      "upload_time": "2025-03-21 00:54:33"
+    }
+  ]
+}
